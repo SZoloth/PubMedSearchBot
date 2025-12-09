@@ -2,8 +2,12 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 import { initializeAudioContext } from '../audio/AudioCore';
 import { connectToRealtimeAPI } from '../audio/WebRTC';
+import { playEarcon } from '../audio/SoundManager';
 
 export type BotStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
+
+// Module-level singleton to survive React StrictMode remounts
+let globalSessionActive = false;
 
 export const useVoiceBot = () => {
     const [status, setStatus] = useState<BotStatus>('idle');
@@ -11,28 +15,35 @@ export const useVoiceBot = () => {
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
     const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-    const isInitializingRef = useRef(false);
 
-    const stopSession = useCallback(() => {
-        dataChannelRef.current?.close();
-        audioCtxRef.current?.close();
-        peerConnectionRef.current?.close();
-        audioCtxRef.current = null;
-        peerConnectionRef.current = null;
-        dataChannelRef.current = null;
-        isInitializingRef.current = false;
-        setStatus('idle');
-    }, []);
+    // Wake word detection refs
+    const isBotSpeakingRef = useRef(false);
+    const pendingBargeInRef = useRef(false);
+
+    // Sound Effects for Status Changes
+    useEffect(() => {
+        if (status === 'listening') playEarcon('listening_start');
+        // We could add 'listening_stop' logic here if we had a distinct 'processing' state before 'thinking'
+        if (status === 'thinking') playEarcon('thinking');
+        // if (status === 'speaking') // Maybe no sound needed, speech starts
+    }, [status]);
 
     const startSession = useCallback(async () => {
-        // Prevent double-initialization
-        if (isInitializingRef.current || status === 'listening' || status === 'thinking' || status === 'speaking') return;
-
-        isInitializingRef.current = true;
+        // Guard against multiple simultaneous calls (module-level singleton survives StrictMode)
+        if (globalSessionActive) {
+            console.log("⚠️ Session init already in progress, ignoring duplicate call");
+            return;
+        }
+        if (status !== 'idle') {
+            console.log("⚠️ Session already active (status:", status, "), ignoring");
+            return;
+        }
+        globalSessionActive = true;
 
         try {
-            // 1. Init Audio Context & Source (triggers permission prompt)
-            console.log("Step 1: Initializing Audio Context...");
+            console.log("Step 1: Application Auto-Start Initiated");
+
+            // 1. Initialize Audio Context
             const { ctx, stream } = await initializeAudioContext();
             audioCtxRef.current = ctx;
 
@@ -65,41 +76,74 @@ export const useVoiceBot = () => {
             dc.onmessage = async (e: MessageEvent) => {
                 try {
                     const event = JSON.parse(e.data);
-                    console.log("Received event:", event.type);
+                    // console.log("Received event:", event.type); // verbose
 
-                    // State Management based on server events
+                    // Track when bot is speaking
                     if (event.type === 'response.audio.delta') {
                         setStatus('speaking');
+                        isBotSpeakingRef.current = true;
                     }
 
-                    // BARGE-IN: When user starts speaking, cancel current response
-                    if (event.type === 'input_audio_buffer.speech_started') {
-                        console.log("🎤 User speaking - Barge-in triggered, canceling response");
-                        setStatus('listening');
-                        dc.send(JSON.stringify({ type: 'response.cancel' }));
-                    }
-
+                    // Bot finished speaking
                     if (event.type === 'response.done') {
                         setStatus('listening');
+                        isBotSpeakingRef.current = false;
+                        pendingBargeInRef.current = false;
                     }
 
-                    // Tool Logic
-                    if (event.type === 'response.function_call_arguments.done') {
-                        if (event.name === 'search_pubmed') {
-                            setStatus('thinking');
-                            console.log("Calling Tool:", event.arguments);
-                            const args = JSON.parse(event.arguments);
+                    // WAKE WORD BARGE-IN: Only interrupt if saying "hey bot"
+                    if (event.type === 'input_audio_buffer.speech_started') {
+                        if (isBotSpeakingRef.current) {
+                            // Bot is speaking - flag that we need to check for wake word
+                            console.log("🎤 User speaking while bot talking - waiting for wake word...");
+                            pendingBargeInRef.current = true;
+                        } else {
+                            // Bot was listening - normal flow, no wake word needed
+                            console.log("🎤 User speaking (bot was listening)");
+                        }
+                    }
 
-                            const result = await fetch('/api/tools/pubmed', {
+                    // Check transcript for wake word
+                    if (event.type === 'conversation.item.input_audio_transcription.completed') {
+                        const transcript = (event.transcript || '').toLowerCase();
+                        console.log("📝 Transcript:", transcript);
+
+                        if (pendingBargeInRef.current) {
+                            // We were waiting to check for wake word
+                            if (transcript.includes('hey bot') || transcript.includes('hey bott') || transcript.includes('a bot')) {
+                                console.log("🚨 Wake word detected! Barge-in activated.");
+                                setStatus('listening');
+                                isBotSpeakingRef.current = false;
+                                pendingBargeInRef.current = false;
+                                playEarcon('listening_start');
+                                dc.send(JSON.stringify({ type: 'response.cancel' }));
+                            } else {
+                                console.log("⏸️ No wake word - ignoring, bot continues");
+                                pendingBargeInRef.current = false;
+                            }
+                        }
+                    }
+
+                    if (event.type === 'response.function_call_arguments.done') {
+                        console.log("🛠️ Tool call received:", event.name, event.arguments);
+                        setStatus('thinking');
+
+                        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+                        if (event.name === 'search_pubmed') {
+                            const args = JSON.parse(event.arguments);
+                            console.log("🔍 Executing PubMed Search:", args.query);
+
+                            const result = await fetch(`${apiUrl}/api/tools/pubmed`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(args)
                             });
 
                             const data = await result.json();
-                            console.log("Tool Result:", data);
+                            console.log("✅ PubMed Results:", data);
 
-                            const toolOutput = {
+                            const toolOutputEvent = {
                                 type: 'conversation.item.create',
                                 item: {
                                     type: 'function_call_output',
@@ -107,12 +151,37 @@ export const useVoiceBot = () => {
                                     output: JSON.stringify(data)
                                 }
                             };
-                            dc.send(JSON.stringify(toolOutput));
+                            dc.send(JSON.stringify(toolOutputEvent));
+                            dc.send(JSON.stringify({ type: 'response.create' }));
+
+                        } else if (event.name === 'get_full_text') {
+                            const args = JSON.parse(event.arguments);
+                            console.log("📖 Fetching Full Text for PMID:", args.pmid);
+
+                            const result = await fetch(`${apiUrl}/api/tools/fulltext`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(args)
+                            });
+
+                            const data = await result.json();
+                            console.log("📄 Full Text Result:", data.success ? "Retrieved" : data.error);
+
+                            const toolOutputEvent = {
+                                type: 'conversation.item.create',
+                                item: {
+                                    type: 'function_call_output',
+                                    call_id: event.call_id,
+                                    output: JSON.stringify(data)
+                                }
+                            };
+                            dc.send(JSON.stringify(toolOutputEvent));
                             dc.send(JSON.stringify({ type: 'response.create' }));
                         }
                     }
                 } catch (err) {
                     console.error("Error processing message:", err);
+                    playEarcon('error');
                 }
             };
 
@@ -120,21 +189,60 @@ export const useVoiceBot = () => {
                 console.error("Data Channel Error:", err);
             };
 
-        } catch (e) {
-            console.error("Failed to start session:", e);
-            stopSession();
-        } finally {
-            isInitializingRef.current = false;
+        } catch (error) {
+            console.error("Failed to start session:", error);
+            setStatus('idle'); // Reset on failure
+            playEarcon('error');
+            globalSessionActive = false;
         }
-    }, [status, stopSession]);
+    }, [status]); // Dependencies
 
+    const stopSession = useCallback(() => {
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+        }
+        if (dataChannelRef.current) {
+            dataChannelRef.current.close();
+            dataChannelRef.current = null;
+        }
+        if (audioCtxRef.current) {
+            audioCtxRef.current.close();
+            audioCtxRef.current = null;
+        }
+        if (remoteAudioRef.current) {
+            remoteAudioRef.current.srcObject = null;
+            remoteAudioRef.current = null;
+        }
+        setStatus('idle');
+        playEarcon('listening_stop');
+        globalSessionActive = false;
+    }, []);
 
-    // Cleanup on unmount
+    // Global Keyboard Listeners
     useEffect(() => {
-        return () => {
-            stopSession();
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                e.preventDefault(); // Prevent scrolling
+                if (status === 'idle') {
+                    startSession();
+                } else {
+                    // For now, Space can toggle session stop, or we could make it 'Push to Talk' later
+                    // Let's make it act as a "Stop/Reset" toggle if active, or just a "Wake" button
+                    // Given the request was "toggle", stopSession if active makes sense.
+                    stopSession();
+                }
+            }
         };
-    }, [stopSession]);
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [status, startSession, stopSession]);
+
+
+    // Note: Removed cleanup on unmount - in StrictMode this causes
+    // the guard to reset between mounts, allowing double-initialization.
+    // The browser will clean up WebRTC connections when the page closes.
 
     return { status, startSession };
 };

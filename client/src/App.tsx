@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { StatusIndicator } from './components/StatusIndicator';
 import { useVoiceBot } from './hooks/useVoiceBot';
 
@@ -6,13 +5,8 @@ function App() {
 
   const { status, startSession } = useVoiceBot();
 
-  // Attempt auto-start on mount
-  useEffect(() => {
-    startSession().catch((e) => {
-      // If auto-start fails (browser policy), we wait for user interaction
-      console.log("Auto-start blocked or failed:", e);
-    });
-  }, [startSession]);
+  // Removed auto-start - now relies on user interaction (click or spacebar)
+  // This prevents StrictMode double-mount issues
 
   return (
     <div

@@ -7,6 +7,11 @@ vi.mock('../audio/AudioCore');
 vi.mock('../audio/WebRTC');
 vi.mock('../audio/VAD');
 
+// Mock SoundManager
+vi.mock('../audio/SoundManager', () => ({
+    playEarcon: vi.fn(),
+}));
+
 describe('useVoiceBot Integration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
