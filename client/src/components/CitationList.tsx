@@ -5,6 +5,9 @@ interface CitationListProps {
     papers: Paper[];
     activePaperId?: string;
     isLoading?: boolean;
+    isBookmarked?: (paperId: string) => boolean;
+    onBookmark?: (paper: Paper) => void;
+    onRemoveBookmark?: (paperId: string) => void;
     onRequestFullText?: (pmid: string) => void;
 }
 
@@ -12,6 +15,9 @@ export const CitationList = ({
     papers,
     activePaperId,
     isLoading = false,
+    isBookmarked,
+    onBookmark,
+    onRemoveBookmark,
     onRequestFullText
 }: CitationListProps) => {
 
@@ -62,6 +68,9 @@ export const CitationList = ({
                         key={paper.id}
                         paper={paper}
                         isActive={paper.id === activePaperId}
+                        isBookmarked={isBookmarked?.(paper.id) ?? false}
+                        onBookmark={onBookmark}
+                        onRemoveBookmark={onRemoveBookmark}
                         onRequestFullText={onRequestFullText}
                     />
                 ))}

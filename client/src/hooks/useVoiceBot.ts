@@ -101,14 +101,23 @@ export const useVoiceBot = () => {
                     const event = JSON.parse(e.data);
                     console.log("📨 Received event:", event.type); // Enable verbose logging
 
-                    // Track when bot is speaking
-                    if (event.type === 'response.audio.delta') {
+                    // Track when bot starts speaking (WebRTC audio goes via track, not data channel)
+                    // Use output_audio_buffer.started which fires when audio output begins
+                    if (event.type === 'output_audio_buffer.started') {
                         setStatus('speaking');
                         isBotSpeakingRef.current = true;
                     }
 
+                    // Also catch response.audio.delta as backup
+                    if (event.type === 'response.audio.delta') {
+                        if (!isBotSpeakingRef.current) {
+                            setStatus('speaking');
+                        }
+                        isBotSpeakingRef.current = true;
+                    }
+
                     // Bot finished speaking
-                    if (event.type === 'response.done') {
+                    if (event.type === 'response.done' || event.type === 'output_audio_buffer.stopped') {
                         setStatus('listening');
                         isBotSpeakingRef.current = false;
                         pendingBargeInRef.current = false;
@@ -290,9 +299,17 @@ export const useVoiceBot = () => {
     }, [status, startSession, stopSession]);
 
 
+    // Function to set playback rate on the remote audio element
+    const setPlaybackRate = useCallback((rate: number) => {
+        if (remoteAudioRef.current) {
+            remoteAudioRef.current.playbackRate = rate;
+            console.log(`🔊 Playback rate set to ${rate}x`);
+        }
+    }, []);
+
     // Note: Removed cleanup on unmount - in StrictMode this causes
     // the guard to reset between mounts, allowing double-initialization.
     // The browser will clean up WebRTC connections when the page closes.
 
-    return { status, startSession, searchResults, transcript };
+    return { status, startSession, searchResults, transcript, setPlaybackRate };
 };
