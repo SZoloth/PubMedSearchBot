@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { StatusIndicator } from './components/StatusIndicator';
 import { CitationList } from './components/CitationList';
+import { Waveform } from './components/Waveform';
+import { Transcript } from './components/Transcript';
 import { useVoiceBot } from './hooks/useVoiceBot';
 
 function App() {
-  const { status, startSession, searchResults } = useVoiceBot();
+  const { status, startSession, searchResults, transcript } = useVoiceBot();
 
   // ACCESSIBILITY: Auto-start on load for blind users
   // This ensures the bot greets them without requiring them to find a button
@@ -31,7 +32,7 @@ function App() {
       <div className="relative z-10 min-h-screen flex flex-col px-4 py-8 md:px-8 lg:px-12">
 
         {/* Header - centered on mobile, left on desktop */}
-        <header className="text-center md:text-left mb-8">
+        <header className="text-center md:text-left mb-6">
           <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold tracking-tighter bg-gradient-to-br from-white to-white/50 bg-clip-text text-transparent">
             Researcher Pro
           </h1>
@@ -40,15 +41,18 @@ function App() {
           </p>
         </header>
 
-        {/* Status Indicator - smaller on mobile */}
-        <div className="flex justify-center md:justify-start mb-8">
-          <div className="transform scale-75 md:scale-100 origin-center md:origin-left">
-            <StatusIndicator status={status} />
-          </div>
+        {/* Waveform + Status - Visual audio feedback */}
+        <div className="flex flex-col items-center md:items-start mb-6">
+          <Waveform status={status} />
+        </div>
+
+        {/* Transcript - Conversation history */}
+        <div className="mb-6">
+          <Transcript messages={transcript} />
         </div>
 
         {/* Divider */}
-        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-8" />
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-6" />
 
         {/* Citation Cards */}
         <main className="flex-1">

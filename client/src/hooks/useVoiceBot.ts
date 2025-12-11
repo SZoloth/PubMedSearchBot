@@ -19,12 +19,21 @@ export interface Paper {
     citation: string;
 }
 
+// Transcript message type
+export interface TranscriptMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    text: string;
+    timestamp: number;
+}
+
 // Module-level singleton to survive React StrictMode remounts
 let globalSessionActive = false;
 
 export const useVoiceBot = () => {
     const [status, setStatus] = useState<BotStatus>('idle');
     const [searchResults, setSearchResults] = useState<Paper[]>([]);
+    const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -119,12 +128,23 @@ export const useVoiceBot = () => {
 
                     // Check transcript for wake word
                     if (event.type === 'conversation.item.input_audio_transcription.completed') {
-                        const transcript = (event.transcript || '').toLowerCase();
-                        console.log("📝 Transcript:", transcript);
+                        const userText = (event.transcript || '').trim();
+                        console.log("📝 Transcript:", userText);
+
+                        // Add user message to transcript
+                        if (userText) {
+                            setTranscript(prev => [...prev, {
+                                id: `user-${Date.now()}`,
+                                role: 'user',
+                                text: userText,
+                                timestamp: Date.now()
+                            }]);
+                        }
 
                         if (pendingBargeInRef.current) {
                             // We were waiting to check for wake word
-                            if (transcript.includes('hey bot') || transcript.includes('hey bott') || transcript.includes('a bot')) {
+                            const lowerText = userText.toLowerCase();
+                            if (lowerText.includes('hey bot') || lowerText.includes('hey bott') || lowerText.includes('a bot')) {
                                 console.log("🚨 Wake word detected! Barge-in activated.");
                                 setStatus('listening');
                                 isBotSpeakingRef.current = false;
@@ -135,6 +155,19 @@ export const useVoiceBot = () => {
                                 console.log("⏸️ No wake word - ignoring, bot continues");
                                 pendingBargeInRef.current = false;
                             }
+                        }
+                    }
+
+                    // Capture bot's spoken response transcript
+                    if (event.type === 'response.audio_transcript.done') {
+                        const botText = (event.transcript || '').trim();
+                        if (botText) {
+                            setTranscript(prev => [...prev, {
+                                id: `bot-${Date.now()}`,
+                                role: 'assistant',
+                                text: botText,
+                                timestamp: Date.now()
+                            }]);
                         }
                     }
 
@@ -261,5 +294,5 @@ export const useVoiceBot = () => {
     // the guard to reset between mounts, allowing double-initialization.
     // The browser will clean up WebRTC connections when the page closes.
 
-    return { status, startSession, searchResults };
+    return { status, startSession, searchResults, transcript };
 };
