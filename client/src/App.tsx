@@ -7,7 +7,7 @@ import { useVoiceBot } from './hooks/useVoiceBot';
 import { useResearcherStorage } from './hooks/useResearcherStorage';
 
 function App() {
-  const { status, startSession, searchResults, transcript } = useVoiceBot();
+  const { status, startSession, searchResults, transcript, manualSearch } = useVoiceBot();
   const {
     bookmarks,
     addBookmark,
@@ -83,11 +83,9 @@ function App() {
                 history={searchHistory}
                 onClear={clearHistory}
                 onSelect={(query) => {
-                  // TODO: Re-run search with this query via voice command
                   setCurrentQuery(query);
                   setViewMode('results');
-                  // For now just show a toast or log - actual re-search would need voice API
-                  console.log('Selected past search:', query);
+                  manualSearch(query); // Directly query PubMed API
                 }}
               />
             </div>

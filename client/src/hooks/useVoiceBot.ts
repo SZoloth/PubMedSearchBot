@@ -307,9 +307,31 @@ export const useVoiceBot = () => {
         }
     }, []);
 
+    // Manual search function - directly queries PubMed API without voice
+    const manualSearch = useCallback(async (query: string) => {
+        console.log("🔍 Manual PubMed Search:", query);
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+        try {
+            const result = await fetch(`${apiUrl}/api/tools/pubmed`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, retmax: 5 })
+            });
+
+            const data = await result.json();
+            console.log("✅ Manual Search Results:", data);
+            setSearchResults(data);
+            return data;
+        } catch (error) {
+            console.error("❌ Manual search failed:", error);
+            return [];
+        }
+    }, []);
+
     // Note: Removed cleanup on unmount - in StrictMode this causes
     // the guard to reset between mounts, allowing double-initialization.
     // The browser will clean up WebRTC connections when the page closes.
 
-    return { status, startSession, searchResults, transcript, setPlaybackRate };
+    return { status, startSession, searchResults, transcript, setPlaybackRate, manualSearch };
 };
