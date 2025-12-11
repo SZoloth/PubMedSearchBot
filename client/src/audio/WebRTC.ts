@@ -25,16 +25,42 @@ export const connectToRealtimeAPI = async (localStream: MediaStream): Promise<{ 
     const pc = new RTCPeerConnection();
 
     // 3. Set up audio output handling BEFORE signaling (critical!)
-    const remoteAudio = new Audio();
+    const remoteAudio = document.createElement('audio');
     remoteAudio.autoplay = true;
+    remoteAudio.id = 'voicebot-remote-audio';
+
+    // CRITICAL: Attach to DOM - some browsers don't reliably play unattached audio
+    // Remove any existing one first to avoid duplicates
+    const existing = document.getElementById('voicebot-remote-audio');
+    if (existing) existing.remove();
+    document.body.appendChild(remoteAudio);
+
+    console.log("🔊 Audio element created and attached to DOM");
 
     pc.ontrack = (e) => {
         console.log("🔊 Received remote audio track from OpenAI!");
+        console.log("🔊 Track info:", e.track.kind, e.track.readyState);
+        console.log("🔊 Streams:", e.streams.length);
+
         remoteAudio.srcObject = e.streams[0];
-        // Also try to play explicitly in case autoplay is blocked
-        remoteAudio.play().catch(err => {
-            console.warn("Autoplay blocked, user interaction needed:", err);
-        });
+
+        // Ensure audio settings are correct
+        remoteAudio.muted = false;
+        remoteAudio.volume = 1.0;
+
+        // Log audio element state
+        console.log("🔊 Audio element state - paused:", remoteAudio.paused, "muted:", remoteAudio.muted, "volume:", remoteAudio.volume);
+
+        // Try to play with detailed error handling
+        remoteAudio.play()
+            .then(() => {
+                console.log("✅ Audio playback started successfully!");
+                console.log("🔊 Audio element after play - paused:", remoteAudio.paused);
+            })
+            .catch(err => {
+                console.error("❌ Audio playback FAILED:", err.name, err.message);
+                console.log("ℹ️ User gesture required. Audio will play on next user interaction.");
+            });
     };
 
     // 4. Add local audio track (microphone input)

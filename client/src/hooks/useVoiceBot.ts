@@ -6,11 +6,25 @@ import { playEarcon } from '../audio/SoundManager';
 
 export type BotStatus = 'idle' | 'listening' | 'thinking' | 'speaking';
 
+// Paper type for search results
+export interface Paper {
+    id: string;
+    title: string;
+    authors: string;
+    journal: string;
+    pubdate: string;
+    link: string;
+    abstract: string;
+    mesh_terms: string[];
+    citation: string;
+}
+
 // Module-level singleton to survive React StrictMode remounts
 let globalSessionActive = false;
 
 export const useVoiceBot = () => {
     const [status, setStatus] = useState<BotStatus>('idle');
+    const [searchResults, setSearchResults] = useState<Paper[]>([]);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
     const dataChannelRef = useRef<RTCDataChannel | null>(null);
@@ -76,7 +90,7 @@ export const useVoiceBot = () => {
             dc.onmessage = async (e: MessageEvent) => {
                 try {
                     const event = JSON.parse(e.data);
-                    // console.log("Received event:", event.type); // verbose
+                    console.log("📨 Received event:", event.type); // Enable verbose logging
 
                     // Track when bot is speaking
                     if (event.type === 'response.audio.delta') {
@@ -142,6 +156,9 @@ export const useVoiceBot = () => {
 
                             const data = await result.json();
                             console.log("✅ PubMed Results:", data);
+
+                            // Store results for UI display
+                            setSearchResults(data);
 
                             const toolOutputEvent = {
                                 type: 'conversation.item.create',
@@ -244,5 +261,5 @@ export const useVoiceBot = () => {
     // the guard to reset between mounts, allowing double-initialization.
     // The browser will clean up WebRTC connections when the page closes.
 
-    return { status, startSession };
+    return { status, startSession, searchResults };
 };
