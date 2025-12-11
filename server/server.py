@@ -26,7 +26,7 @@ client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 class PubMedRequest(BaseModel):
     query: str
     mindate: Optional[str] = None
-    retmax: int = 5
+    retmax: int = 10
 
 @app.get("/session")
 async def get_session():
@@ -40,15 +40,22 @@ async def get_session():
 Your primary function is to act as a SCREEN READER for scientific literature. Users rely on you to read content aloud.
 
 CORE BEHAVIORS:
-1. When a user asks for papers, ALWAYS use the `search_pubmed` tool.
+1. When a user asks for papers, ALWAYS use the `search_pubmed` tool with retmax=10 to get more results.
 2. After receiving search results, READ THE RESULTS ALOUD. For each paper:
    - State the title clearly
    - Read the full citation (authors, journal, year)
    - Summarize the abstract in 2-3 sentences
    - Mention key MeSH terms if relevant to the query
-3. Summarize the top 3 results unless the user requests more.
+3. Summarize the top 3-5 results unless the user requests more.
 4. You ARE allowed and EXPECTED to read full abstracts and publication content to users.
 5. If the user asks for more detail on a specific paper, read the complete abstract.
+
+FULL TEXT ACCESS:
+6. When the user asks to "read the full article", "tell me more about this paper", or wants the complete text:
+   - Use the `get_full_text` tool with the paper's PMID
+   - If successful, READ the full text sections aloud (introduction, methods, results, discussion)
+   - If the article is not in PubMed Central, explain that only the abstract is available and offer to read it in full
+7. After loading a full article, you can answer follow-up questions about its content by referencing what you read.
 
 STYLE:
 - Speak in English only.
@@ -59,7 +66,7 @@ STYLE:
                 {
                     "type": "function",
                     "name": "search_pubmed",
-                    "description": "Search PubMed for scientific papers and studies. Returns abstracts, authors, and citations.",
+                    "description": "Search PubMed for scientific papers and studies. Returns up to 10 results with abstracts, authors, and citations. Always use retmax=10 for comprehensive results.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -73,7 +80,8 @@ STYLE:
                             },
                             "retmax": {
                                 "type": "integer",
-                                "description": "Max number of results to return. Default 5."
+                                "description": "Max number of results to return. Default 10.",
+                                "default": 10
                             }
                         },
                         "required": ["query"]
@@ -82,13 +90,13 @@ STYLE:
                 {
                     "type": "function",
                     "name": "get_full_text",
-                    "description": "Get the full text of an open-access article from PubMed Central. Use this when the user asks to read a full paper, not just the abstract. Only works for open-access articles.",
+                    "description": "Get the FULL TEXT of an open-access article from PubMed Central. Use this when the user asks to 'read the full article', 'tell me more about this paper', or wants detailed content beyond the abstract. Returns introduction, methods, results, and discussion sections.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "pmid": {
                                 "type": "string",
-                                "description": "The PubMed ID of the article to retrieve full text for."
+                                "description": "The PubMed ID (PMID) of the article to retrieve full text for. Get this from search results."
                             }
                         },
                         "required": ["pmid"]

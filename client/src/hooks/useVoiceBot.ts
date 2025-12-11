@@ -316,7 +316,7 @@ export const useVoiceBot = () => {
             const result = await fetch(`${apiUrl}/api/tools/pubmed`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query, retmax: 5 })
+                body: JSON.stringify({ query, retmax: 10 })
             });
 
             const data = await result.json();
