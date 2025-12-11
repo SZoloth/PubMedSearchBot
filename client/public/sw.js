@@ -1,8 +1,6 @@
 // Service Worker for Researcher Pro PWA
-const CACHE_NAME = 'researcher-pro-v1';
+const CACHE_NAME = 'researcher-pro-v2'; // Bumped version to invalidate old cache
 const STATIC_ASSETS = [
-    '/',
-    '/index.html',
     '/manifest.json',
     '/icons/icon-192.svg',
     '/icons/icon-512.svg'
@@ -35,32 +33,42 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch: Network-first strategy for API, cache-first for static assets
+// Fetch: Network-first for HTML/JS, cache-first for static assets only
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
     // Skip non-GET requests
     if (event.request.method !== 'GET') return;
 
-    // Skip API and WebRTC requests - always go to network
+    // Skip API, session, and WebRTC requests - always go to network
     if (url.pathname.startsWith('/api') ||
         url.pathname.startsWith('/session') ||
         url.hostname === 'api.openai.com') {
         return;
     }
 
-    // For static assets: cache-first, fallback to network
+    // HTML/JS/CSS: Network-first (always get fresh content)
+    if (url.pathname === '/' ||
+        url.pathname.endsWith('.html') ||
+        url.pathname.endsWith('.js') ||
+        url.pathname.endsWith('.css')) {
+        event.respondWith(
+            fetch(event.request)
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
+
+    // Static assets (icons, manifest): Cache-first
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
             if (cachedResponse) {
                 return cachedResponse;
             }
             return fetch(event.request).then((networkResponse) => {
-                // Don't cache non-successful responses
                 if (!networkResponse || networkResponse.status !== 200) {
                     return networkResponse;
                 }
-                // Clone and cache
                 const responseClone = networkResponse.clone();
                 caches.open(CACHE_NAME).then((cache) => {
                     cache.put(event.request, responseClone);
